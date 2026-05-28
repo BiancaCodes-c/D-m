@@ -1,0 +1,15 @@
+weather:
+  hourly:
+    - temperature_2m
+    - relative_humidity_2m
+
+air_quality:
+  parameters:
+    - pm25
+    - pm10
+    - o3
+    - no2
+
+water:
+  product: water_temperature
+  units: metric

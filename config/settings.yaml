@@ -1,0 +1,10 @@
+location:
+  name: Wilmington, NC
+  latitude: 34.2257
+  longitude: -77.9447
+
+noaa:
+  station_id: "8557380"
+
+database:
+  path: data/db/dheghom.db

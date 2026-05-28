@@ -1,0 +1,10 @@
+fastapi
+uvicorn
+requests
+pyyaml
+pandas
+numpy
+python-dotenv
+openmeteo-requests
+requests-cache
+retry-requests

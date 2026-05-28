@@ -1,0 +1,9 @@
+.venv/
+frontend/node_modules/
+frontend/dist/
+frontend/.vite/
+__pycache__/
+*.pyc
+.cache.sqlite
+data/db/dheghom.db
+.env
