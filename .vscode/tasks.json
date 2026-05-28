@@ -1,0 +1,17 @@
+{
+	"version": "2.0.0",
+	"tasks": [
+		{
+			"label": "Export folium map",
+			"type": "shell",
+			"command": ".venv/bin/python",
+			"args": [
+				"-m",
+				"src.scripts.export_folium_map"
+			],
+			"isBackground": false,
+			"problemMatcher": [],
+			"group": "build"
+		}
+	]
+}

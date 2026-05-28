@@ -6,17 +6,22 @@ from math import sqrt
 def _z(value: float | None, mean: float, std_dev: float) -> float:
     if value is None or std_dev == 0:
         return 0.0
-    return (float(value) - mean) / std_dev
+    try:
+        numeric_value = float(value)
+    except (TypeError, ValueError):
+        return 0.0
+    return (numeric_value - mean) / std_dev
 
 
 def compute_health_score(snapshot: dict) -> dict:
     """Compute a basic anomaly pulse score from latest metrics."""
     weather = snapshot.get("weather", {})
+    weather_current = weather.get("current", weather)
     air = snapshot.get("air_quality", {})
     water = snapshot.get("water", {})
 
-    z_temp = _z(weather.get("temperature_c"), 20.0, 8.0)
-    z_humidity = _z(weather.get("humidity_pct"), 60.0, 20.0)
+    z_temp = _z(weather_current.get("temperature_c"), 20.0, 8.0)
+    z_humidity = _z(weather_current.get("humidity_pct"), 60.0, 20.0)
     z_pm25 = _z(air.get("pm25"), 12.0, 8.0)
     z_water = _z(water.get("water_temp_c"), 18.0, 6.0)
 

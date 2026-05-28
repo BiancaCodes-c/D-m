@@ -3,24 +3,24 @@
 from __future__ import annotations
 
 from datetime import datetime, timezone
+from time import sleep
 
-import openmeteo_requests
-import pandas as pd
-import requests_cache
-from retry_requests import retry
+import requests
 
 OPEN_METEO_URL = "https://api.open-meteo.com/v1/forecast"
+REQUEST_TIMEOUT_SECONDS = 20
+MAX_RETRIES = 4
+RETRY_BACKOFF_SECONDS = 0.25
 
 
-def _build_client() -> openmeteo_requests.Client:
-    cache_session = requests_cache.CachedSession(".cache", expire_after=3600)
-    retry_session = retry(cache_session, retries=5, backoff_factor=0.2)
-    return openmeteo_requests.Client(session=retry_session)
+def _safe_value(values: list, index: int):
+    try:
+        return values[index]
+    except (IndexError, TypeError):
+        return None
 
 
-def fetch_weather(latitude: float = 34.2257, longitude: float = -77.9447) -> dict:
-    """Fetch current weather variables from Open-Meteo with caching and retries."""
-    client = _build_client()
+def _request_weather_payload(latitude: float, longitude: float) -> dict:
     params = {
         "latitude": latitude,
         "longitude": longitude,
@@ -53,61 +53,82 @@ def fetch_weather(latitude: float = 34.2257, longitude: float = -77.9447) -> dic
         "forecast_days": 2,
     }
 
-    responses = client.weather_api(OPEN_METEO_URL, params=params)
-    response = responses[0]
+    headers = {"Accept": "application/json"}
+    last_error: Exception | None = None
 
-    current = response.Current()
-    daily = response.Daily()
+    for attempt in range(MAX_RETRIES):
+        try:
+            response = requests.get(
+                OPEN_METEO_URL,
+                params=params,
+                headers=headers,
+                timeout=REQUEST_TIMEOUT_SECONDS,
+            )
+            response.raise_for_status()
+            return response.json()
+        except (requests.RequestException, ValueError) as error:
+            last_error = error
+            if attempt < MAX_RETRIES - 1:
+                sleep(RETRY_BACKOFF_SECONDS * (2**attempt))
+
+    raise RuntimeError(f"Open-Meteo request failed: {last_error}") from last_error
+
+
+def fetch_weather(latitude: float = 34.2257, longitude: float = -77.9447) -> dict:
+    """Fetch current weather variables from Open-Meteo using plain requests."""
+    payload = _request_weather_payload(latitude, longitude)
+    current = payload.get("current", {})
+    daily = payload.get("daily", {})
 
     current_values = {
-        "temperature_c": current.Variables(0).Value(),
-        "humidity_pct": current.Variables(1).Value(),
-        "rain_mm": current.Variables(2).Value(),
-        "precipitation_mm": current.Variables(3).Value(),
-        "showers_mm": current.Variables(4).Value(),
-        "snowfall_mm": current.Variables(5).Value(),
-        "surface_pressure_hpa": current.Variables(6).Value(),
-        "pressure_msl_hpa": current.Variables(7).Value(),
-        "cloud_cover_pct": current.Variables(8).Value(),
-        "weather_code": current.Variables(9).Value(),
-        "apparent_temperature_c": current.Variables(10).Value(),
-        "is_day": current.Variables(11).Value(),
-        "wind_speed_10m_kmh": current.Variables(12).Value(),
-        "wind_direction_10m_deg": current.Variables(13).Value(),
-        "wind_gusts_10m_kmh": current.Variables(14).Value(),
+        "temperature_c": current.get("temperature_2m"),
+        "humidity_pct": current.get("relative_humidity_2m"),
+        "rain_mm": current.get("rain"),
+        "precipitation_mm": current.get("precipitation"),
+        "showers_mm": current.get("showers"),
+        "snowfall_mm": current.get("snowfall"),
+        "surface_pressure_hpa": current.get("surface_pressure"),
+        "pressure_msl_hpa": current.get("pressure_msl"),
+        "cloud_cover_pct": current.get("cloud_cover"),
+        "weather_code": current.get("weather_code"),
+        "apparent_temperature_c": current.get("apparent_temperature"),
+        "is_day": current.get("is_day"),
+        "wind_speed_10m_kmh": current.get("wind_speed_10m"),
+        "wind_direction_10m_deg": current.get("wind_direction_10m"),
+        "wind_gusts_10m_kmh": current.get("wind_gusts_10m"),
     }
 
-    day_start = pd.to_datetime(daily.Time(), unit="s", utc=True)
-    day_end = pd.to_datetime(daily.TimeEnd(), unit="s", utc=True)
-    daily_dates = pd.date_range(
-        start=day_start,
-        end=day_end,
-        freq=pd.Timedelta(seconds=daily.Interval()),
-        inclusive="left",
-    ).tz_convert(response.Timezone().decode())
+    daily_dates = [str(value) for value in daily.get("time", [])]
+    weather_codes = daily.get("weather_code", [])
+    temp_max = daily.get("temperature_2m_max", [])
+    temp_min = daily.get("temperature_2m_min", [])
+    precipitation_sum = daily.get("precipitation_sum", [])
+    wind_speed_max = daily.get("wind_speed_10m_max", [])
+    wind_gusts_max = daily.get("wind_gusts_10m_max", [])
 
-    daily_values = pd.DataFrame(
-        {
-            "date": daily_dates,
-            "weather_code": daily.Variables(0).ValuesAsNumpy(),
-            "temperature_2m_max": daily.Variables(1).ValuesAsNumpy(),
-            "temperature_2m_min": daily.Variables(2).ValuesAsNumpy(),
-            "precipitation_sum": daily.Variables(3).ValuesAsNumpy(),
-            "wind_speed_10m_max": daily.Variables(4).ValuesAsNumpy(),
-            "wind_gusts_10m_max": daily.Variables(5).ValuesAsNumpy(),
-        }
-    )
-    daily_values["date"] = daily_values["date"].astype(str)
+    daily_values = []
+    for index, date_value in enumerate(daily_dates):
+        daily_values.append(
+            {
+                "date": date_value,
+                "weather_code": _safe_value(weather_codes, index),
+                "temperature_2m_max": _safe_value(temp_max, index),
+                "temperature_2m_min": _safe_value(temp_min, index),
+                "precipitation_sum": _safe_value(precipitation_sum, index),
+                "wind_speed_10m_max": _safe_value(wind_speed_max, index),
+                "wind_gusts_10m_max": _safe_value(wind_gusts_max, index),
+            }
+        )
 
     return {
         "location": {
-            "latitude": response.Latitude(),
-            "longitude": response.Longitude(),
-            "elevation_m": response.Elevation(),
-            "timezone": response.Timezone().decode(),
-            "utc_offset_seconds": response.UtcOffsetSeconds(),
+            "latitude": payload.get("latitude"),
+            "longitude": payload.get("longitude"),
+            "elevation_m": payload.get("elevation"),
+            "timezone": payload.get("timezone"),
+            "utc_offset_seconds": payload.get("utc_offset_seconds"),
         },
         "observed_at": datetime.now(timezone.utc).isoformat(),
         "current": current_values,
-        "daily": daily_values.to_dict(orient="records"),
+        "daily": daily_values,
     }
