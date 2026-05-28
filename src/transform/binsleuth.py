@@ -193,9 +193,12 @@ def build_data_panels(snapshot: dict[str, Any]) -> list[dict[str, Any]]:
             "endpoint": "/atmosphere",
             "metrics": [
                 {"label": "Temperature", "value": weather.get("temperature_c"), "unit": "C"},
+                {"label": "Feels Like", "value": weather.get("apparent_temperature_c") or weather.get("apparent_temperature"), "unit": "C"},
                 {"label": "Humidity", "value": weather.get("humidity_pct"), "unit": "%"},
                 {"label": "Cloud Cover", "value": weather.get("cloud_cover_pct"), "unit": "%"},
                 {"label": "Wind", "value": weather.get("wind_speed_10m_kmh"), "unit": "km/h"},
+                {"label": "Gusts", "value": weather.get("wind_gusts_10m_kmh"), "unit": "km/h"},
+                {"label": "Pressure", "value": weather.get("pressure_msl_hpa") or weather.get("pressure_msl"), "unit": "hPa"},
             ],
         },
         {
@@ -206,6 +209,7 @@ def build_data_panels(snapshot: dict[str, Any]) -> list[dict[str, Any]]:
                 {"label": "PM2.5", "value": air.get("pm25"), "unit": "ug/m3"},
                 {"label": "NO2", "value": air.get("no2"), "unit": "ppb"},
                 {"label": "O3", "value": air.get("o3"), "unit": "ppb"},
+                {"label": "Status", "value": air.get("status") or "live", "unit": ""},
             ],
         },
         {
@@ -215,6 +219,8 @@ def build_data_panels(snapshot: dict[str, Any]) -> list[dict[str, Any]]:
             "metrics": [
                 {"label": "Water Temp", "value": ocean.get("water_temp_c"), "unit": "C"},
                 {"label": "Station", "value": ocean.get("station_id"), "unit": ""},
+                {"label": "Latitude", "value": ocean.get("lat"), "unit": ""},
+                {"label": "Longitude", "value": ocean.get("lon"), "unit": ""},
             ],
         },
         {
@@ -224,7 +230,60 @@ def build_data_panels(snapshot: dict[str, Any]) -> list[dict[str, Any]]:
             "metrics": [
                 {"label": "Max Probability", "value": aurora.get("max_probability"), "unit": "%"},
                 {"label": "Forecast Points", "value": aurora.get("point_count"), "unit": ""},
+                {"label": "Energy", "value": aurora.get("energy") or aurora.get("oval") or aurora.get("max_probability"), "unit": ""},
                 {"label": "Pulse Score", "value": pulse.get("pulse_score"), "unit": ""},
+                {"label": "Anomaly", "value": pulse.get("anomaly_magnitude"), "unit": ""},
+            ],
+        },
+    ]
+
+
+def build_grid_extensions(snapshot: dict[str, Any]) -> list[dict[str, Any]]:
+    """Create compact metric extension cards for the Data Grid view."""
+    weather = snapshot.get("weather", {}).get("current", {})
+    air = snapshot.get("air_quality", {})
+    ocean = snapshot.get("ocean", {})
+    aurora = snapshot.get("aurora", {})
+    pulse = snapshot.get("pulse", {})
+    anomaly_forecast = snapshot.get("anomaly_forecast", {})
+
+    return [
+        {
+            "id": "grid-climate",
+            "label": "Climate Metrics",
+            "endpoint": "/data-grid",
+            "metrics": [
+                {"label": "Temp", "value": weather.get("temperature_c"), "unit": "C"},
+                {"label": "Humidity", "value": weather.get("humidity_pct"), "unit": "%"},
+                {"label": "PM2.5", "value": air.get("pm25"), "unit": "ug/m3"},
+            ],
+        },
+        {
+            "id": "grid-ocean",
+            "label": "Ocean Metrics",
+            "endpoint": "/data-grid",
+            "metrics": [
+                {"label": "Water Temp", "value": ocean.get("water_temp_c"), "unit": "C"},
+                {"label": "Station", "value": ocean.get("station_id"), "unit": ""},
+            ],
+        },
+        {
+            "id": "grid-aurora",
+            "label": "Aurora Metrics",
+            "endpoint": "/data-grid",
+            "metrics": [
+                {"label": "Probability", "value": aurora.get("max_probability"), "unit": "%"},
+                {"label": "Pulse", "value": pulse.get("pulse_score"), "unit": ""},
+            ],
+        },
+        {
+            "id": "grid-forecast",
+            "label": "Anomaly Forecast",
+            "endpoint": "/weather-anomalies",
+            "metrics": [
+                {"label": "Risk", "value": anomaly_forecast.get("risk_score"), "unit": ""},
+                {"label": "Horizon", "value": anomaly_forecast.get("horizon_hours"), "unit": "h"},
+                {"label": "Model", "value": anomaly_forecast.get("model"), "unit": ""},
             ],
         },
     ]

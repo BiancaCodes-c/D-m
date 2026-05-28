@@ -895,6 +895,8 @@ export default function DheghomGoogleEarthUI() {
   const mapLayerData = snapshot?.map_layers ?? {};
   const heatSignatures = mapLayerData.heat_signatures ?? [];
   const dataPanels = mapLayerData.panels ?? [];
+  const gridExtensions = snapshot?.grid_extensions ?? [];
+  const anomalyForecast = snapshot?.anomaly_forecast ?? {};
   const feedStatus = loadState.status === 'ready' ? 'Realtime feed connected' : loadState.status === 'error' ? 'Feed offline' : 'Connecting to feed';
   const earthVisible = !isMapView && (activeView !== 'Data Grid' || activeMode === 'Pulse');
   const gridVisible = !isMapView;
@@ -926,6 +928,7 @@ export default function DheghomGoogleEarthUI() {
         metric.unit ? `${formatMetric(metric.value, ` ${metric.unit}`)}` : `${metric.value ?? '—'}`,
       ])
     : activeMetrics;
+  const gridPanels = activeView === 'Data Grid' ? dataPanels : [];
   const atmosphereTicker = [
     ['Humidity', formatMetric(liveWeather.humidity_pct, '%')],
     ['Pressure', formatMetric(liveWeather.pressure_msl_hpa, ' hPa')],
@@ -1157,6 +1160,65 @@ export default function DheghomGoogleEarthUI() {
             <h2 className="text-sm uppercase tracking-[0.24em] text-cyan-100">{MODE_LABELS[activeMode]} Metrics</h2>
           </div>
           <p className="mt-3 text-xs leading-5 text-cyan-100/62">{activeSubtitle}</p>
+          {activeView === 'Data Grid' && gridExtensions.length > 0 && (
+            <div className="mt-4 rounded-xl border border-cyan-300/12 bg-cyan-200/6 p-3">
+              <p className="mb-2 text-[9px] uppercase tracking-[0.3em] text-cyan-100/48">Grid Metric Extensions</p>
+              <div className="space-y-2">
+                {gridExtensions.map((extension) => (
+                  <div key={extension.id} className="rounded-lg border border-white/8 bg-white/5 px-3 py-2">
+                    <div className="flex items-center justify-between gap-3">
+                      <p className="text-[10px] uppercase tracking-[0.22em] text-cyan-100/55">{extension.label}</p>
+                      <p className="text-[9px] uppercase tracking-[0.18em] text-white/36">{extension.endpoint}</p>
+                    </div>
+                    <div className="mt-2 grid grid-cols-2 gap-2">
+                      {extension.metrics.map((metric) => (
+                        <div key={metric.label} className="rounded-md border border-white/8 bg-black/20 px-2 py-1">
+                          <p className="text-[9px] uppercase tracking-[0.18em] text-white/42">{metric.label}</p>
+                          <p className="text-xs text-cyan-50">{metric.unit ? formatMetric(metric.value, ` ${metric.unit}`) : `${metric.value ?? '—'}`}</p>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+          {activeView === 'Data Grid' && (anomalyForecast.predictions?.length > 0 || anomalyForecast.summary) && (
+            <div className="mt-4 rounded-xl border border-fuchsia-300/15 bg-fuchsia-200/6 p-3">
+              <p className="text-[9px] uppercase tracking-[0.3em] text-fuchsia-100/50">AI Weather Anomaly Forecast</p>
+              <p className="mt-2 text-xs leading-5 text-fuchsia-50/85">{anomalyForecast.summary ?? 'Predicting near-term shifts from the live observation stream.'}</p>
+              <div className="mt-3 grid gap-2">
+                {(anomalyForecast.predictions ?? []).map((prediction) => (
+                  <div key={prediction.variable} className="rounded-lg border border-white/8 bg-black/20 px-3 py-2">
+                    <div className="flex items-start justify-between gap-3">
+                      <div>
+                        <p className="text-[10px] uppercase tracking-[0.24em] text-fuchsia-100/70">{prediction.label}</p>
+                        <p className="mt-1 text-xs text-white/70">{prediction.source}</p>
+                      </div>
+                      <div className="text-right">
+                        <p className="text-[10px] uppercase tracking-[0.18em] text-white/40">Risk {Math.round((prediction.risk ?? 0) * 100)}%</p>
+                        <p className="mt-1 text-xs text-fuchsia-50">{prediction.direction}</p>
+                      </div>
+                    </div>
+                    <div className="mt-2 grid grid-cols-3 gap-2 text-xs text-cyan-50">
+                      <div className="rounded-md border border-white/8 bg-white/5 px-2 py-1">
+                        <p className="text-[9px] uppercase tracking-[0.18em] text-white/42">Forecast</p>
+                        <p>{formatMetric(prediction.predicted_value, prediction.unit ? ` ${prediction.unit}` : '')}</p>
+                      </div>
+                      <div className="rounded-md border border-white/8 bg-white/5 px-2 py-1">
+                        <p className="text-[9px] uppercase tracking-[0.18em] text-white/42">Delta</p>
+                        <p>{formatMetric(prediction.delta, prediction.unit ? ` ${prediction.unit}` : '')}</p>
+                      </div>
+                      <div className="rounded-md border border-white/8 bg-white/5 px-2 py-1">
+                        <p className="text-[9px] uppercase tracking-[0.18em] text-white/42">ETA</p>
+                        <p>{prediction.eta_hours}h</p>
+                      </div>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
           {activeMode === 'Atmosphere' && (
             <div className="mt-4 h-28 overflow-hidden rounded-xl border border-cyan-300/12 bg-black/24">
               <motion.div
@@ -1174,12 +1236,31 @@ export default function DheghomGoogleEarthUI() {
             </div>
           )}
           <div className="mt-4 space-y-2">
-            {renderedMetrics.map(([label, value]) => (
-              <div key={label} className="flex min-h-12 items-center justify-between gap-4 rounded-xl border border-white/8 bg-black/22 px-3 py-2">
-                <p className="text-[10px] uppercase tracking-[0.24em] text-white/45">{label}</p>
-                <p className="text-right text-sm font-light text-cyan-100">{value}</p>
-              </div>
-            ))}
+            {activeView === 'Data Grid' ? (
+              gridPanels.map((panel) => (
+                <div key={panel.id} className="rounded-xl border border-white/8 bg-black/22 px-3 py-2">
+                  <div className="flex items-center justify-between gap-4">
+                    <p className="text-[10px] uppercase tracking-[0.24em] text-cyan-100/55">{panel.title}</p>
+                    <p className="text-[9px] uppercase tracking-[0.18em] text-white/36">{panel.endpoint}</p>
+                  </div>
+                  <div className="mt-3 grid grid-cols-2 gap-2">
+                    {panel.metrics.map((metric) => (
+                      <div key={`${panel.id}-${metric.label}`} className="rounded-lg border border-white/8 bg-white/5 px-2 py-1">
+                        <p className="text-[9px] uppercase tracking-[0.18em] text-white/42">{metric.label}</p>
+                        <p className="text-xs text-cyan-100">{metric.unit ? formatMetric(metric.value, ` ${metric.unit}`) : `${metric.value ?? '—'}`}</p>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              ))
+            ) : (
+              renderedMetrics.map(([label, value]) => (
+                <div key={label} className="flex min-h-12 items-center justify-between gap-4 rounded-xl border border-white/8 bg-black/22 px-3 py-2">
+                  <p className="text-[10px] uppercase tracking-[0.24em] text-white/45">{label}</p>
+                  <p className="text-right text-sm font-light text-cyan-100">{value}</p>
+                </div>
+              ))
+            )}
           </div>
         </div>
       </motion.aside>

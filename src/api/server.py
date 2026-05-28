@@ -12,7 +12,8 @@ from src.ingest.openaq import fetch_air_quality
 from src.ingest.openmeteo import fetch_weather
 from src.ingest.swpc_aurora import fetch_aurora_forecast
 from src.models.health_score import compute_health_score
-from src.transform.binsleuth import DEFAULT_LOCATION, build_heat_signatures, build_map_layers
+from src.models.weather_anomaly_ai import predict_weather_anomalies
+from src.transform.binsleuth import DEFAULT_LOCATION, build_grid_extensions, build_heat_signatures, build_map_layers
 from src.utils.db import get_latest_snapshot
 
 MAP_HTML_PATH = Path(__file__).resolve().parents[2] / "map.html"
@@ -80,6 +81,7 @@ def _collect_feed(include_aurora: bool = False) -> dict:
     if include_aurora:
         feed_data["aurora"] = fetch_aurora_forecast()
 
+    feed_data["anomaly_forecast"] = predict_weather_anomalies()
     feed_data["map_layers"] = build_map_layers(feed_data)
     return feed_data
 
@@ -162,6 +164,12 @@ def aurora() -> dict:
     return fetch_aurora_forecast()
 
 
+@app.get("/weather-anomalies")
+def weather_anomalies() -> dict:
+    """Return the local trend-based anomaly forecast."""
+    return predict_weather_anomalies()
+
+
 @app.get("/map-view")
 def map_view(mode: str = "Climate") -> dict:
     """Return a frontend scene config for the accessible 3D Earth map view."""
@@ -241,10 +249,12 @@ def map_heat(include_aurora: bool = True) -> dict:
 @app.get("/data-grid")
 def data_grid() -> dict:
     """Return a data-grid payload connected to all live APIs."""
+    feed_data = _collect_feed(include_aurora=True)
     return {
         "view": "Data Grid",
         "extensions": MAP_VIEW_EXTENSIONS,
-        **_collect_feed(include_aurora=True),
+        "grid_extensions": build_grid_extensions(feed_data),
+        **feed_data,
     }
 
 
