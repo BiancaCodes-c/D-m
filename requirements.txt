@@ -9,3 +9,4 @@ openmeteo-requests
 requests-cache
 retry-requests
 folium
+pytest

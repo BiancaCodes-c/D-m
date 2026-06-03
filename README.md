@@ -7,25 +7,33 @@ A lightweight environmental pulse pipeline for Wilmington, NC that ingests weath
 ## Quick Start
 
 1. Create a virtual environment and activate it.
-2. Install dependencies:
+1. Install dependencies:
 
 ```bash
 pip install -r requirements.txt
 ```
 
-3. Copy environment file:
+1. Copy environment file and configure secrets:
 
 ```bash
 cp .env.example .env
+# Then edit .env and set OPENAQ_API_KEY if you have one
 ```
 
-4. Run ingest + score:
+1. Run ingest + score (one-off):
 
 ```bash
 python src/main.py
 ```
 
-5. Start API server:
+Optional: run the background scheduler to keep `/latest` refreshed periodically:
+
+```bash
+# runs `src.main.run()` every SCHED_INTERVAL_MIN minutes (default 5)
+python -m src.scheduler
+```
+
+1. Start API server:
 
 ```bash
 uvicorn src.api.server:app --reload
@@ -55,6 +63,6 @@ http://127.0.0.1:8000/map-heat
 Map rendering flow:
 
 1. Ingest APIs collect weather, air quality, ocean, and aurora data.
-2. `src/transform/binsleuth.py` normalizes values into bins and 3D Earth coordinates.
-3. `/map-layers` returns panels, legends, and heat signatures for the frontend.
-4. `/map-heat` returns a lightweight heat-only payload for direct globe rendering.
+1. `src/transform/binsleuth.py` normalizes values into bins and 3D Earth coordinates.
+1. `/map-layers` returns panels, legends, and heat signatures for the frontend.
+1. `/map-heat` returns a lightweight heat-only payload for direct globe rendering.

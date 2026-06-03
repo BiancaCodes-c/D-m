@@ -2,6 +2,12 @@
 
 from datetime import datetime, timezone
 from pathlib import Path
+import os
+import asyncio
+from typing import Optional
+
+from dotenv import load_dotenv
+load_dotenv()
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
@@ -19,6 +25,62 @@ from src.utils.db import get_latest_snapshot
 MAP_HTML_PATH = Path(__file__).resolve().parents[2] / "map.html"
 
 app = FastAPI(title="Dheghom API", version="0.1.0")
+
+# Background scheduler task (optional embed)
+_scheduler_task: Optional[asyncio.Task] = None
+
+
+async def _scheduler_loop(interval_min: float) -> None:
+    """Run the ingest `run()` on an interval in a thread to avoid blocking.
+
+    The ingest function is imported inside the loop to avoid import-time
+    circularities.
+    """
+    from importlib import import_module
+
+    try:
+        # import inside function to keep module import order predictable
+        ingest_run = import_module("src.main").run
+    except Exception as exc:  # pragma: no cover - defensive
+        print(f"Scheduler import failed: {exc}")
+        return
+
+    while True:
+        try:
+            await asyncio.to_thread(ingest_run)
+        except Exception as exc:  # pragma: no cover - keep scheduler alive
+            print(f"Scheduled ingest failed: {exc}")
+        await asyncio.sleep(max(0.1, float(interval_min)) * 60)
+
+
+@app.on_event("startup")
+async def _maybe_start_scheduler() -> None:
+    """Start the embedded scheduler unless explicitly disabled.
+
+    Control with env var `EMBED_SCHEDULER` (set to "0" to disable) and
+    `SCHED_INTERVAL_MIN` to change the interval.
+    """
+    global _scheduler_task
+    embed = os.getenv("EMBED_SCHEDULER", "1")
+    if embed == "0":
+        return
+    try:
+        interval = float(os.getenv("SCHED_INTERVAL_MIN", "5"))
+    except ValueError:
+        interval = 5.0
+    _scheduler_task = asyncio.create_task(_scheduler_loop(interval))
+
+
+@app.on_event("shutdown")
+async def _stop_scheduler() -> None:
+    global _scheduler_task
+    if _scheduler_task is None:
+        return
+    _scheduler_task.cancel()
+    try:
+        await _scheduler_task
+    except asyncio.CancelledError:
+        pass
 
 MAP_VIEW_MODES = {
     "Climate": {
@@ -60,8 +122,11 @@ MAP_VIEW_EXTENSIONS = [
 ]
 
 
-def _collect_feed(include_aurora: bool = False) -> dict:
-    weather_data = fetch_weather()
+def _collect_feed(include_aurora: bool = False, latitude: float | None = None, longitude: float | None = None) -> dict:
+    lat = latitude if latitude is not None else None
+    lon = longitude if longitude is not None else None
+    # use provided coordinates for weather fetch when available
+    weather_data = fetch_weather(latitude=lat, longitude=lon) if (lat is not None and lon is not None) else fetch_weather()
     air_data = fetch_air_quality()
     water_data = fetch_water_temperature()
     snapshot = {"weather": weather_data, "air_quality": air_data, "water": water_data}
@@ -82,7 +147,11 @@ def _collect_feed(include_aurora: bool = False) -> dict:
         feed_data["aurora"] = fetch_aurora_forecast()
 
     feed_data["anomaly_forecast"] = predict_weather_anomalies()
-    feed_data["map_layers"] = build_map_layers(feed_data)
+    # build map layers with explicit location when lat/lon provided
+    location = None
+    if lat is not None and lon is not None:
+        location = {"lat": lat, "lon": lon}
+    feed_data["map_layers"] = build_map_layers(feed_data, location=location)
     return feed_data
 
 app.add_middleware(
@@ -109,15 +178,17 @@ def latest() -> dict:
 
 
 @app.get("/weather")
-def weather() -> dict:
-    """Return live Open-Meteo weather data."""
+def weather(lat: float | None = None, lon: float | None = None) -> dict:
+    """Return live Open-Meteo weather data. Optional `lat` and `lon` query params override location."""
+    if lat is not None and lon is not None:
+        return fetch_weather(latitude=lat, longitude=lon)
     return fetch_weather()
 
 
 @app.get("/atmosphere")
-def atmosphere() -> dict:
-    """Return atmosphere-focused weather data for the Earth map layer."""
-    weather_data = fetch_weather()
+def atmosphere(lat: float | None = None, lon: float | None = None) -> dict:
+    """Return atmosphere-focused weather data for the Earth map layer. Optional `lat`/`lon`."""
+    weather_data = fetch_weather(latitude=lat, longitude=lon) if (lat is not None and lon is not None) else fetch_weather()
     current = weather_data.get("current", {})
     return {
         "updated_at": datetime.now(timezone.utc).isoformat(),
@@ -133,14 +204,18 @@ def atmosphere() -> dict:
 
 
 @app.get("/air-quality")
-def air_quality() -> dict:
-    """Return live OpenAQ air-quality sensor data."""
+def air_quality(location_id: int | None = None) -> dict:
+    """Return live OpenAQ air-quality sensor data. Optionally pass `location_id` to select a specific station."""
+    if location_id is not None:
+        return fetch_air_quality(location_id=location_id)
     return fetch_air_quality()
 
 
 @app.get("/ocean")
-def ocean() -> dict:
-    """Return live NOAA CO-OPS ocean temperature data."""
+def ocean(station_id: str | None = None) -> dict:
+    """Return live NOAA CO-OPS ocean temperature data. Optionally pass `station_id`."""
+    if station_id:
+        return fetch_water_temperature(station_id=station_id)
     return fetch_water_temperature()
 
 
@@ -171,22 +246,26 @@ def weather_anomalies() -> dict:
 
 
 @app.get("/map-view")
-def map_view(mode: str = "Climate") -> dict:
+def map_view(mode: str = "Climate", lat: float | None = None, lon: float | None = None) -> dict:
     """Return a frontend scene config for the accessible 3D Earth map view."""
     normalized_mode = mode if mode in MAP_VIEW_MODES else "Climate"
     mode_config = MAP_VIEW_MODES[normalized_mode]
+
+    location = {
+        "city": DEFAULT_LOCATION["city"],
+        "state": DEFAULT_LOCATION["state"],
+        "country": DEFAULT_LOCATION["country"],
+        "lat": DEFAULT_LOCATION["lat"],
+        "lon": DEFAULT_LOCATION["lon"],
+    }
+    if lat is not None and lon is not None:
+        location.update({"lat": lat, "lon": lon})
 
     return {
         "updated_at": datetime.now(timezone.utc).isoformat(),
         "view": "Map View",
         "active_mode": normalized_mode,
-        "location": {
-            "city": DEFAULT_LOCATION["city"],
-            "state": DEFAULT_LOCATION["state"],
-            "country": DEFAULT_LOCATION["country"],
-            "lat": DEFAULT_LOCATION["lat"],
-            "lon": DEFAULT_LOCATION["lon"],
-        },
+        "location": location,
         "camera": {
             "position": mode_config["position"],
             "target": mode_config["target"],
@@ -225,9 +304,9 @@ def map_view_extensions() -> dict:
 
 
 @app.get("/map-layers")
-def map_layers(include_aurora: bool = True) -> dict:
-    """Return all API values translated into 3D map layers."""
-    feed_data = _collect_feed(include_aurora=include_aurora)
+def map_layers(include_aurora: bool = True, lat: float | None = None, lon: float | None = None) -> dict:
+    """Return all API values translated into 3D map layers. Optional `lat`/`lon` to center the map."""
+    feed_data = _collect_feed(include_aurora=include_aurora, latitude=lat, longitude=lon)
     return {
         "updated_at": datetime.now(timezone.utc).isoformat(),
         "view": "Map Layers",
@@ -236,20 +315,21 @@ def map_layers(include_aurora: bool = True) -> dict:
 
 
 @app.get("/map-heat")
-def map_heat(include_aurora: bool = True) -> dict:
-    """Return heat signatures for direct 3D Earth rendering."""
-    feed_data = _collect_feed(include_aurora=include_aurora)
+def map_heat(include_aurora: bool = True, lat: float | None = None, lon: float | None = None) -> dict:
+    """Return heat signatures for direct 3D Earth rendering. Optional lat/lon."""
+    feed_data = _collect_feed(include_aurora=include_aurora, latitude=lat, longitude=lon)
+    location = {"lat": lat, "lon": lon} if (lat is not None and lon is not None) else DEFAULT_LOCATION
     return {
         "updated_at": datetime.now(timezone.utc).isoformat(),
-        "location": DEFAULT_LOCATION,
+        "location": location,
         "heat_signatures": build_heat_signatures(feed_data),
     }
 
 
 @app.get("/data-grid")
-def data_grid() -> dict:
-    """Return a data-grid payload connected to all live APIs."""
-    feed_data = _collect_feed(include_aurora=True)
+def data_grid(lat: float | None = None, lon: float | None = None) -> dict:
+    """Return a data-grid payload connected to all live APIs. Optional lat/lon to focus data."""
+    feed_data = _collect_feed(include_aurora=True, latitude=lat, longitude=lon)
     return {
         "view": "Data Grid",
         "extensions": MAP_VIEW_EXTENSIONS,
@@ -259,19 +339,19 @@ def data_grid() -> dict:
 
 
 @app.get("/combined-feed")
-def combined_feed() -> dict:
-    """Return all Earth-map layers, including aurora borealis forecast data."""
+def combined_feed(lat: float | None = None, lon: float | None = None) -> dict:
+    """Return all Earth-map layers, including aurora borealis forecast data. Optional lat/lon."""
     return {
         "view": "Combined",
-        "map": map_view("Pulse"),
-        **_collect_feed(include_aurora=True),
+        "map": map_view("Pulse", lat=lat, lon=lon),
+        **_collect_feed(include_aurora=True, latitude=lat, longitude=lon),
     }
 
 
 @app.get("/feed")
-def feed() -> dict:
-    """Return a combined real-time feed for the frontend to poll."""
-    return _collect_feed()
+def feed(lat: float | None = None, lon: float | None = None) -> dict:
+    """Return a combined real-time feed for the frontend to poll. Optional lat/lon."""
+    return _collect_feed(latitude=lat, longitude=lon)
 
 
 @app.get("/folium-map")

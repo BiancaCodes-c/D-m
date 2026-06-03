@@ -805,6 +805,7 @@ export default function DheghomGoogleEarthUI() {
   const [zoomedArea, setZoomedArea] = useState(null);
   const [snapshot, setSnapshot] = useState(null);
   const [mapViewConfig, setMapViewConfig] = useState(null);
+  const [selectedLocation, setSelectedLocation] = useState({ label: 'Wilmington', lat: 39.7391, lon: -75.5398 });
   const [loadState, setLoadState] = useState({ status: 'loading', error: '' });
   const isMapView = activeView === 'Map View';
 
@@ -821,14 +822,42 @@ export default function DheghomGoogleEarthUI() {
             : activeView === 'Heat Map'
               ? 'map-heat'
               : 'feed';
-        const response = await fetch(`${API_BASE_URL}/${endpoint}`);
-        if (!response.ok) {
-          throw new Error(`API returned ${response.status}`);
-        }
 
-        const data = await response.json();
+        const params = new URLSearchParams();
+        if (selectedLocation?.lat && selectedLocation?.lon) {
+          params.set('lat', String(selectedLocation.lat));
+          params.set('lon', String(selectedLocation.lon));
+        }
+        const baseUrl = `${API_BASE_URL}/${endpoint}` + (params.toString() ? `?${params.toString()}` : '');
+        const baseResp = await fetch(baseUrl);
+        if (!baseResp.ok) throw new Error(`API returned ${baseResp.status}`);
+        const baseData = await baseResp.json();
+
+        // Fetch supplementary endpoints so UI fields are always populated
+        const pulseUrl = `${API_BASE_URL}/pulse` + (params.toString() ? `?${params.toString()}` : '');
+        const anomaliesUrl = `${API_BASE_URL}/weather-anomalies` + (params.toString() ? `?${params.toString()}` : '');
+        const auroraUrl = `${API_BASE_URL}/aurora`;
+
+        const [pulseResp, anomaliesResp, auroraResp] = await Promise.all([
+          fetch(pulseUrl).catch(() => null),
+          fetch(anomaliesUrl).catch(() => null),
+          // aurora can be large; only fetch when needed (Pulse view or Combined)
+          (activeView === 'Combined' || activeMode === 'Pulse') ? fetch(auroraUrl).catch(() => null) : Promise.resolve(null),
+        ]);
+
+        const pulse = pulseResp && pulseResp.ok ? await pulseResp.json() : baseData.pulse ?? null;
+        const anomalies = anomaliesResp && anomaliesResp.ok ? await anomaliesResp.json() : baseData.anomaly_forecast ?? null;
+        const aurora = auroraResp && auroraResp.ok ? await auroraResp.json() : baseData.aurora ?? null;
+
+        const merged = {
+          ...baseData,
+          pulse: pulse ?? baseData.pulse,
+          anomaly_forecast: anomalies ?? baseData.anomaly_forecast,
+          aurora: aurora ?? baseData.aurora,
+        };
+
         if (!cancelled) {
-          setSnapshot(data);
+          setSnapshot(merged);
           setLoadState({ status: 'ready', error: '' });
         }
       } catch (error) {
@@ -845,7 +874,7 @@ export default function DheghomGoogleEarthUI() {
       cancelled = true;
       window.clearInterval(interval);
     };
-  }, [activeView]);
+  }, [activeView, selectedLocation]);
 
   useEffect(() => {
     if (activeView === 'Data Grid' || activeView === 'Combined') {
@@ -858,7 +887,12 @@ export default function DheghomGoogleEarthUI() {
 
     async function loadMapView() {
       try {
-        const response = await fetch(`${API_BASE_URL}/map-view?mode=${encodeURIComponent(activeMode)}`);
+        const params = new URLSearchParams({ mode: activeMode });
+        if (selectedLocation?.lat && selectedLocation?.lon) {
+          params.set('lat', String(selectedLocation.lat));
+          params.set('lon', String(selectedLocation.lon));
+        }
+        const response = await fetch(`${API_BASE_URL}/map-view?${params.toString()}`);
         if (!response.ok) {
           throw new Error(`Map view returned ${response.status}`);
         }
@@ -879,7 +913,7 @@ export default function DheghomGoogleEarthUI() {
     return () => {
       cancelled = true;
     };
-  }, [activeMode]);
+  }, [activeMode, selectedLocation]);
 
   const activeMetrics = buildModeMetrics(snapshot, activeMode);
   const activeSubtitle = snapshot ? getModeSubtitle(snapshot, activeMode) : MODE_CONFIG[activeMode].subtitle;
@@ -912,6 +946,7 @@ export default function DheghomGoogleEarthUI() {
     ['Air', `PM2.5 ${formatMetric(liveAir.pm25, ' ug/m3')}`],
     ['Ocean', `${formatMetric(liveOcean.water_temp_c, '°C')}`],
     ['Aurora', `${formatMetric(liveAurora.max_probability, '%')}`],
+    ['Pulse', `${formatMetric(snapshot?.pulse?.pulse_score ?? snapshot?.pulse_score ?? null, '%')}`],
   ];
   const selectedPanel = dataPanels.find((panel) => {
     const modeToPanel = {
@@ -1047,11 +1082,53 @@ export default function DheghomGoogleEarthUI() {
                 {view}
               </button>
             ))}
+            <div className="relative flex items-center gap-2">
+              <select
+                aria-label="Select location"
+                value={selectedLocation ? selectedLocation.label : 'Wilmington'}
+                onChange={(e) => {
+                  const val = e.target.value;
+                  const preset = {
+                    Wilmington: { label: 'Wilmington', lat: 39.7391, lon: -75.5398 },
+                    Miami: { label: 'Miami', lat: 25.7617, lon: -80.1918 },
+                    'San Diego': { label: 'San Diego', lat: 32.7157, lon: -117.1611 },
+                    Anchorage: { label: 'Anchorage', lat: 61.2181, lon: -149.9003 },
+                    'Custom...': { label: 'Custom', lat: null, lon: null },
+                  }[val];
+                  setSelectedLocation(preset);
+                }}
+                className="h-10 px-3 rounded-full border bg-black/20 text-[11px] text-cyan-100"
+              >
+                <option>Wilmington</option>
+                <option>Miami</option>
+                <option>San Diego</option>
+                <option>Anchorage</option>
+                <option>Custom...</option>
+              </select>
+              {selectedLocation?.label === 'Custom' && (
+                <div className="flex items-center gap-2">
+                  <input
+                    type="number"
+                    step="0.0001"
+                    placeholder="lat"
+                    className="h-10 w-20 rounded-md px-2 text-sm bg-black/20 border"
+                    onChange={(e) => setSelectedLocation((s) => ({ ...s, lat: Number(e.target.value) }))}
+                  />
+                  <input
+                    type="number"
+                    step="0.0001"
+                    placeholder="lon"
+                    className="h-10 w-24 rounded-md px-2 text-sm bg-black/20 border"
+                    onChange={(e) => setSelectedLocation((s) => ({ ...s, lon: Number(e.target.value) }))}
+                  />
+                </div>
+              )}
+            </div>
           </div>
         </div>
       </div>
 
-      <div className="absolute left-1/2 top-24 z-30 flex w-[min(44rem,calc(100vw-2rem))] -translate-x-1/2 flex-wrap justify-center gap-2 px-2">
+      <div className="absolute left-1/2 top-28 z-30 flex w-[min(40rem,calc(100vw-2rem))] -translate-x-1/2 flex-wrap justify-center gap-3 px-3">
         {MODES.map((item) => (
           <button
             key={item}
@@ -1078,9 +1155,9 @@ export default function DheghomGoogleEarthUI() {
       )}
 
       <motion.aside
-        animate={{ x: mapFocusActive ? -360 : 0, opacity: mapFocusActive ? 0.18 : 1 }}
+        animate={{ x: mapFocusActive ? -320 : 0, opacity: mapFocusActive ? 0.18 : 1 }}
         transition={{ duration: 0.55, ease: 'easeOut' }}
-        className="absolute left-4 top-40 bottom-28 z-20 w-[min(18rem,calc(100vw-2rem))] overflow-y-auto pr-1 lg:left-6 lg:w-72"
+        className="absolute left-4 top-40 bottom-28 z-20 w-[min(16rem,calc(100vw-2rem))] overflow-y-auto pr-1 lg:left-6 lg:w-64"
         style={{ pointerEvents: mapFocusActive ? 'none' : 'auto' }}
       >
         <div className="mb-4 rounded-2xl border border-cyan-400/15 bg-black/28 px-4 py-3 backdrop-blur-xl">
@@ -1149,9 +1226,9 @@ export default function DheghomGoogleEarthUI() {
       </motion.aside>
 
       <motion.aside
-        animate={{ x: mapFocusActive ? 380 : 0, opacity: mapFocusActive ? 0.18 : 1 }}
+        animate={{ x: mapFocusActive ? 340 : 0, opacity: mapFocusActive ? 0.18 : 1 }}
         transition={{ duration: 0.55, ease: 'easeOut' }}
-        className="absolute right-4 top-36 bottom-28 z-20 w-[min(20rem,calc(100vw-2rem))] overflow-y-auto lg:right-6 lg:w-78"
+        className="absolute right-4 top-36 bottom-28 z-20 w-[min(16rem,calc(100vw-2rem))] overflow-y-auto lg:right-6 lg:w-64"
         style={{ pointerEvents: mapFocusActive ? 'none' : 'auto' }}
       >
         <div className="rounded-2xl border border-cyan-400/15 bg-black/28 p-4 backdrop-blur-xl">
