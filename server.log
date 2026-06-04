@@ -395,3 +395,6 @@ INFO:     127.0.0.1:59086 - "GET /pulse?lat=39.7391&lon=-75.5398 HTTP/1.1" 200 O
 INFO:     127.0.0.1:59126 - "GET /feed?lat=39.7391&lon=-75.5398 HTTP/1.1" 200 OK
 INFO:     127.0.0.1:59131 - "GET /weather-anomalies?lat=39.7391&lon=-75.5398 HTTP/1.1" 200 OK
 INFO:     127.0.0.1:59126 - "GET /pulse?lat=39.7391&lon=-75.5398 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:59140 - "GET /feed?lat=39.7391&lon=-75.5398 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:59144 - "GET /weather-anomalies?lat=39.7391&lon=-75.5398 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:59140 - "GET /pulse?lat=39.7391&lon=-75.5398 HTTP/1.1" 200 OK
