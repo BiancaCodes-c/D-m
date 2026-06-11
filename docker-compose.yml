@@ -1,0 +1,40 @@
+services:
+  api:
+    build: .
+    command: uvicorn src.api.server:app --host 0.0.0.0 --port 8000
+    environment:
+      EMBED_SCHEDULER: "0"
+      FEED_CACHE_TTL_SECONDS: "300"
+      LOG_LEVEL: "INFO"
+      OPENAQ_API_KEY: "${OPENAQ_API_KEY:-}"
+      SCHED_INTERVAL_MIN: "${SCHED_INTERVAL_MIN:-5}"
+    ports:
+      - "8000:8000"
+    volumes:
+      - dheghom-data:/app/data
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/health', timeout=3)"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+
+  worker:
+    build: .
+    command: python -m src.scheduler
+    environment:
+      OPENAQ_API_KEY: "${OPENAQ_API_KEY:-}"
+      SCHED_INTERVAL_MIN: "${SCHED_INTERVAL_MIN:-5}"
+      LOG_LEVEL: "INFO"
+    volumes:
+      - dheghom-data:/app/data
+
+  frontend:
+    build:
+      context: ./frontend
+    ports:
+      - "5173:80"
+    depends_on:
+      - api
+
+volumes:
+  dheghom-data:

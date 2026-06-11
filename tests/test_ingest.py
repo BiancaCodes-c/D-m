@@ -1,26 +1,18 @@
-from pathlib import Path
-import sqlite3
-
-from src.main import run
-from src.utils.db import DB_PATH, get_latest_snapshot
+from src import main
+from src.utils import db
 
 
-def test_run_creates_snapshot(tmp_path):
-    # Ensure DB path is inside tmp to avoid polluting project DB
-    db_dir = tmp_path / "data" / "db"
-    db_dir.mkdir(parents=True, exist_ok=True)
-    # Monkeypatch DB_PATH to tmp
-    original = DB_PATH
-    try:
-        # assign new path
-        DB_PATH.unlink(missing_ok=True)
-    except Exception:
-        pass
-    # Instead of monkeypatching import, we'll run and assert returned snapshot
-    snapshot = run()
+def test_run_creates_snapshot(tmp_path, monkeypatch):
+    monkeypatch.setattr(db, "DB_PATH", tmp_path / "data" / "db" / "dheghom.db")
+    monkeypatch.setattr(main, "fetch_weather", lambda: {"current": {"temperature_c": 22, "humidity_pct": 60}})
+    monkeypatch.setattr(main, "fetch_air_quality", lambda: {"pm25": 7, "no2": 12, "o3": 30, "status": "ok"})
+    monkeypatch.setattr(main, "fetch_water_temperature", lambda: {"station_id": "8557380", "water_temp_c": 19})
+    monkeypatch.setattr(main, "fetch_aurora_forecast", lambda: {"max_probability": 3, "points": []})
+
+    snapshot = main.run()
     assert isinstance(snapshot, dict)
     assert "weather" in snapshot
     assert "health_score" in snapshot
-    latest = get_latest_snapshot()
+    latest = db.get_latest_snapshot()
     assert latest is not None
     assert "weather" in latest

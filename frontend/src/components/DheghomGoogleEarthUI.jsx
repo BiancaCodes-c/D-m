@@ -74,6 +74,7 @@ const MODE_METRICS = {
 };
 
 const API_BASE_URL = import.meta.env.VITE_API_BASE_URL ?? 'http://127.0.0.1:8000';
+const FEED_POLL_MS = Number(import.meta.env.VITE_FEED_POLL_MS ?? 60000);
 
 function vectorFromArray(value, fallback) {
   if (!Array.isArray(value) || value.length !== 3) return fallback;
@@ -811,56 +812,34 @@ export default function DheghomGoogleEarthUI() {
 
   useEffect(() => {
     let cancelled = false;
+    let controller = null;
 
     async function loadLatest() {
+      controller?.abort();
+      controller = new AbortController();
+
       try {
-        setLoadState({ status: 'loading', error: '' });
-        const endpoint = activeView === 'Combined'
-          ? 'combined-feed'
-          : activeView === 'Data Grid'
-            ? 'data-grid'
-            : activeView === 'Heat Map'
-              ? 'map-heat'
-              : 'feed';
+        if (document.visibilityState === 'hidden') return;
+        setLoadState((current) => current.status === 'ready' ? current : { status: 'loading', error: '' });
 
         const params = new URLSearchParams();
         if (selectedLocation?.lat && selectedLocation?.lon) {
           params.set('lat', String(selectedLocation.lat));
           params.set('lon', String(selectedLocation.lon));
         }
-        const baseUrl = `${API_BASE_URL}/${endpoint}` + (params.toString() ? `?${params.toString()}` : '');
-        const baseResp = await fetch(baseUrl);
-        if (!baseResp.ok) throw new Error(`API returned ${baseResp.status}`);
-        const baseData = await baseResp.json();
+        params.set('include_aurora', String(activeView === 'Combined' || activeMode === 'Pulse'));
 
-        // Fetch supplementary endpoints so UI fields are always populated
-        const pulseUrl = `${API_BASE_URL}/pulse` + (params.toString() ? `?${params.toString()}` : '');
-        const anomaliesUrl = `${API_BASE_URL}/weather-anomalies` + (params.toString() ? `?${params.toString()}` : '');
-        const auroraUrl = `${API_BASE_URL}/aurora`;
-
-        const [pulseResp, anomaliesResp, auroraResp] = await Promise.all([
-          fetch(pulseUrl).catch(() => null),
-          fetch(anomaliesUrl).catch(() => null),
-          // aurora can be large; only fetch when needed (Pulse view or Combined)
-          (activeView === 'Combined' || activeMode === 'Pulse') ? fetch(auroraUrl).catch(() => null) : Promise.resolve(null),
-        ]);
-
-        const pulse = pulseResp && pulseResp.ok ? await pulseResp.json() : baseData.pulse ?? null;
-        const anomalies = anomaliesResp && anomaliesResp.ok ? await anomaliesResp.json() : baseData.anomaly_forecast ?? null;
-        const aurora = auroraResp && auroraResp.ok ? await auroraResp.json() : baseData.aurora ?? null;
-
-        const merged = {
-          ...baseData,
-          pulse: pulse ?? baseData.pulse,
-          anomaly_forecast: anomalies ?? baseData.anomaly_forecast,
-          aurora: aurora ?? baseData.aurora,
-        };
+        const feedUrl = `${API_BASE_URL}/feed?${params.toString()}`;
+        const response = await fetch(feedUrl, { signal: controller.signal });
+        if (!response.ok) throw new Error(`API returned ${response.status}`);
+        const feedData = await response.json();
 
         if (!cancelled) {
-          setSnapshot(merged);
+          setSnapshot(feedData);
           setLoadState({ status: 'ready', error: '' });
         }
       } catch (error) {
+        if (error.name === 'AbortError') return;
         if (!cancelled) {
           setLoadState({ status: 'error', error: error.message || 'Failed to load live data' });
         }
@@ -868,13 +847,16 @@ export default function DheghomGoogleEarthUI() {
     }
 
     loadLatest();
-    const interval = window.setInterval(loadLatest, 15000);
+    const interval = window.setInterval(loadLatest, FEED_POLL_MS);
+    document.addEventListener('visibilitychange', loadLatest);
 
     return () => {
       cancelled = true;
+      controller?.abort();
       window.clearInterval(interval);
+      document.removeEventListener('visibilitychange', loadLatest);
     };
-  }, [activeView, selectedLocation]);
+  }, [activeMode, activeView, selectedLocation]);
 
   useEffect(() => {
     if (activeView === 'Data Grid' || activeView === 'Combined') {

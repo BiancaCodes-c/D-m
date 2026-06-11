@@ -5,7 +5,8 @@ import sqlite3
 from pathlib import Path
 from datetime import datetime, timezone
 
-DB_PATH = Path("data/db/dheghom.db")
+PROJECT_ROOT = Path(__file__).resolve().parents[2]
+DB_PATH = PROJECT_ROOT / "data" / "db" / "dheghom.db"
 
 DEFAULT_LOCATION = {
     "lat": 34.2257,
@@ -42,6 +43,24 @@ def ensure_db() -> None:
                 observed_at TEXT,
                 created_at DATETIME DEFAULT CURRENT_TIMESTAMP
             )
+            """
+        )
+        conn.execute(
+            """
+            CREATE INDEX IF NOT EXISTS idx_observations_source_variable_time
+            ON observations (source, variable, observed_at)
+            """
+        )
+        conn.execute(
+            """
+            CREATE INDEX IF NOT EXISTS idx_observations_variable_time
+            ON observations (variable, observed_at)
+            """
+        )
+        conn.execute(
+            """
+            CREATE INDEX IF NOT EXISTS idx_observations_geo_time
+            ON observations (lat, lon, observed_at)
             """
         )
 
@@ -160,3 +179,54 @@ def get_latest_snapshot() -> dict | None:
     if row is None:
         return None
     return json.loads(row[0])
+
+
+def get_latest_snapshot_meta() -> dict | None:
+    ensure_db()
+    with _connect() as conn:
+        row = conn.execute("SELECT updated_at FROM snapshots WHERE id = 1").fetchone()
+    if row is None:
+        return None
+    return {"updated_at": row[0], "db_path": str(DB_PATH)}
+
+
+def list_observations(
+    source: str | None = None,
+    variable: str | None = None,
+    since: str | None = None,
+    until: str | None = None,
+    limit: int = 250,
+) -> list[dict]:
+    """Return time-series observations with optional filters."""
+    ensure_db()
+    clauses = []
+    params: list[object] = []
+
+    if source:
+        clauses.append("source = ?")
+        params.append(source)
+    if variable:
+        clauses.append("variable = ?")
+        params.append(variable)
+    if since:
+        clauses.append("observed_at >= ?")
+        params.append(since)
+    if until:
+        clauses.append("observed_at <= ?")
+        params.append(until)
+    params.append(max(1, min(limit, 2000)))
+
+    where_sql = f"WHERE {' AND '.join(clauses)}" if clauses else ""
+    query = f"""
+        SELECT source, variable, value, unit, lat, lon, observed_at, created_at
+        FROM observations
+        {where_sql}
+        ORDER BY observed_at DESC, id DESC
+        LIMIT ?
+    """
+
+    with _connect() as conn:
+        conn.row_factory = sqlite3.Row
+        rows = conn.execute(query, params).fetchall()
+
+    return [dict(row) for row in rows]
