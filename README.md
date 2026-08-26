@@ -2,7 +2,7 @@
 
 Pronunciation: **deh-GHOM**
 
-A lightweight environmental pulse pipeline for Wilmington, NC that ingests weather, air quality, and water temperature data, then computes a simple health/anomaly score.
+A lightweight environmental pulse pipeline for Wilmington that ingests weather, air quality, and water temperature data, then computes a simple health/anomaly score.
 
 ## Quick Start
 
