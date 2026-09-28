@@ -7,14 +7,12 @@ from time import sleep
 
 import requests
 
+from src.config.location import DEFAULT_LATITUDE, DEFAULT_LONGITUDE, DEFAULT_LOCATION
+
 OPEN_METEO_URL = "https://api.open-meteo.com/v1/forecast"
 REQUEST_TIMEOUT_SECONDS = 20
 MAX_RETRIES = 4
 RETRY_BACKOFF_SECONDS = 0.25
-
-# Default: Wilmington, Delaware (matches README and frontend Climate pin)
-DEFAULT_LATITUDE = 39.7391
-DEFAULT_LONGITUDE = -75.5398
 
 
 def _safe_value(values: list, index: int):
@@ -134,9 +132,9 @@ def fetch_weather(
             "elevation_m": payload.get("elevation"),
             "timezone": payload.get("timezone"),
             "utc_offset_seconds": payload.get("utc_offset_seconds"),
-            "city": "Wilmington",
-            "state": "Delaware",
-            "country": "USA",
+            "city": DEFAULT_LOCATION["city"],
+            "state": DEFAULT_LOCATION["state"],
+            "country": DEFAULT_LOCATION["country"],
         },
         "observed_at": datetime.now(timezone.utc).isoformat(),
         "current": current_values,

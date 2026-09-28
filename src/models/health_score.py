@@ -18,7 +18,8 @@ def compute_health_score(snapshot: dict) -> dict:
     weather = snapshot.get("weather", {})
     weather_current = weather.get("current", weather)
     air = snapshot.get("air_quality", {})
-    water = snapshot.get("water", {})
+    # Accept either ocean (API feed) or water (ingest snapshot) keys
+    water = snapshot.get("ocean") or snapshot.get("water") or {}
 
     z_temp = _z(weather_current.get("temperature_c"), 20.0, 8.0)
     z_humidity = _z(weather_current.get("humidity_pct"), 60.0, 20.0)
@@ -31,4 +32,10 @@ def compute_health_score(snapshot: dict) -> dict:
     return {
         "pulse_score": round(pulse, 2),
         "anomaly_magnitude": round(anomaly_magnitude, 3),
+        "components": {
+            "z_temp": round(z_temp, 3),
+            "z_humidity": round(z_humidity, 3),
+            "z_pm25": round(z_pm25, 3),
+            "z_water": round(z_water, 3),
+        },
     }
