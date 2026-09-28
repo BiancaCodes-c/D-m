@@ -5,12 +5,14 @@ import sqlite3
 from pathlib import Path
 from datetime import datetime, timezone
 
+from src.config.location import DEFAULT_LATITUDE, DEFAULT_LONGITUDE
+
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
 DB_PATH = PROJECT_ROOT / "data" / "db" / "dheghom.db"
 
 DEFAULT_LOCATION = {
-    "lat": 34.2257,
-    "lon": -77.9447,
+    "lat": DEFAULT_LATITUDE,
+    "lon": DEFAULT_LONGITUDE,
 }
 
 
@@ -90,8 +92,9 @@ def _build_observations(snapshot: dict) -> list[dict]:
     water = snapshot.get("ocean", snapshot.get("water", {}))
     aurora = snapshot.get("aurora", {})
 
-    lat = float(snapshot.get("location", {}).get("lat", DEFAULT_LOCATION["lat"]))
-    lon = float(snapshot.get("location", {}).get("lon", DEFAULT_LOCATION["lon"]))
+    location = snapshot.get("location") or {}
+    lat = float(location.get("lat") or location.get("latitude") or DEFAULT_LOCATION["lat"])
+    lon = float(location.get("lon") or location.get("longitude") or DEFAULT_LOCATION["lon"])
 
     weather_observed_at = weather.get("observed_at") or snapshot.get("updated_at") or datetime.now(timezone.utc).isoformat()
     air_observed_at = air.get("observed_at") or snapshot.get("updated_at") or datetime.now(timezone.utc).isoformat()

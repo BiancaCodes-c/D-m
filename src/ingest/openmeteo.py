@@ -7,6 +7,8 @@ from time import sleep
 
 import requests
 
+from src.config.location import DEFAULT_LATITUDE, DEFAULT_LONGITUDE, DEFAULT_LOCATION
+
 OPEN_METEO_URL = "https://api.open-meteo.com/v1/forecast"
 REQUEST_TIMEOUT_SECONDS = 20
 MAX_RETRIES = 4
@@ -74,7 +76,10 @@ def _request_weather_payload(latitude: float, longitude: float) -> dict:
     raise RuntimeError(f"Open-Meteo request failed: {last_error}") from last_error
 
 
-def fetch_weather(latitude: float = 34.2257, longitude: float = -77.9447) -> dict:
+def fetch_weather(
+    latitude: float = DEFAULT_LATITUDE,
+    longitude: float = DEFAULT_LONGITUDE,
+) -> dict:
     """Fetch current weather variables from Open-Meteo using plain requests."""
     payload = _request_weather_payload(latitude, longitude)
     current = payload.get("current", {})
@@ -127,6 +132,9 @@ def fetch_weather(latitude: float = 34.2257, longitude: float = -77.9447) -> dic
             "elevation_m": payload.get("elevation"),
             "timezone": payload.get("timezone"),
             "utc_offset_seconds": payload.get("utc_offset_seconds"),
+            "city": DEFAULT_LOCATION["city"],
+            "state": DEFAULT_LOCATION["state"],
+            "country": DEFAULT_LOCATION["country"],
         },
         "observed_at": datetime.now(timezone.utc).isoformat(),
         "current": current_values,

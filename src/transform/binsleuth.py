@@ -5,13 +5,7 @@ from __future__ import annotations
 from math import cos, pi, sin
 from typing import Any
 
-DEFAULT_LOCATION = {
-    "city": "Wilmington",
-    "state": "North Carolina",
-    "country": "USA",
-    "lat": 34.2257,
-    "lon": -77.9447,
-}
+from src.config.location import DEFAULT_LOCATION
 
 SIGNATURE_SPECS = [
     {
