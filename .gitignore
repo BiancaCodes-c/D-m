@@ -1,9 +1,43 @@
+# Virtual environments
 .venv/
+venv/
+env/
+
+# Frontend
 frontend/node_modules/
 frontend/dist/
 frontend/.vite/
+
+# Python
 __pycache__/
-*.pyc
+*.py[cod]
+*$py.class
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+
+# Runtime logs and caches (never commit)
+*.log
+server.log
 .cache.sqlite
-data/db/dheghom.db
+.requests-cache/
+
+# Local data and databases
+data/
+*.db
+*.sqlite
+*.sqlite3
+
+# Secrets
 .env
+.env.*
+!.env.example
+
+# OS / editor
+.DS_Store
+Thumbs.db
+.idea/
+*.swp
+*~

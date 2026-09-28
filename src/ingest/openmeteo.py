@@ -12,6 +12,10 @@ REQUEST_TIMEOUT_SECONDS = 20
 MAX_RETRIES = 4
 RETRY_BACKOFF_SECONDS = 0.25
 
+# Default: Wilmington, Delaware (matches README and frontend Climate pin)
+DEFAULT_LATITUDE = 39.7391
+DEFAULT_LONGITUDE = -75.5398
+
 
 def _safe_value(values: list, index: int):
     try:
@@ -74,7 +78,10 @@ def _request_weather_payload(latitude: float, longitude: float) -> dict:
     raise RuntimeError(f"Open-Meteo request failed: {last_error}") from last_error
 
 
-def fetch_weather(latitude: float = 34.2257, longitude: float = -77.9447) -> dict:
+def fetch_weather(
+    latitude: float = DEFAULT_LATITUDE,
+    longitude: float = DEFAULT_LONGITUDE,
+) -> dict:
     """Fetch current weather variables from Open-Meteo using plain requests."""
     payload = _request_weather_payload(latitude, longitude)
     current = payload.get("current", {})
@@ -127,6 +134,9 @@ def fetch_weather(latitude: float = 34.2257, longitude: float = -77.9447) -> dic
             "elevation_m": payload.get("elevation"),
             "timezone": payload.get("timezone"),
             "utc_offset_seconds": payload.get("utc_offset_seconds"),
+            "city": "Wilmington",
+            "state": "Delaware",
+            "country": "USA",
         },
         "observed_at": datetime.now(timezone.utc).isoformat(),
         "current": current_values,
