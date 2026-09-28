@@ -1,12 +1,16 @@
-fastapi
-uvicorn
-requests
-pyyaml
-pandas
-numpy
-python-dotenv
-openmeteo-requests
-requests-cache
-retry-requests
-folium
-pytest
+# Dheghom — pinned core dependencies
+# Python 3.11+
+
+fastapi==0.115.12
+uvicorn[standard]==0.34.0
+requests==2.32.3
+pyyaml==6.0.2
+pandas==2.2.3
+numpy==2.2.4
+python-dotenv==1.1.0
+openmeteo-requests==1.3.0
+requests-cache==1.2.1
+retry-requests==2.0.0
+folium==0.19.5
+pytest==8.3.5
+httpx==0.28.1
